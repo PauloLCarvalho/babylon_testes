@@ -46,7 +46,7 @@ const createScene = () => {
             godzilla.position.y = 1;
             
             // Ajustar escala - Godzilla TAMANHO
-            godzilla.scaling = new BABYLON.Vector3(0.007, 0.007, 0.007);
+            godzilla.scaling = new BABYLON.Vector3(0.005, 0.005, 0.005);
             
             // Resetar rotação inicial do modelo
             godzilla.rotation = new BABYLON.Vector3(0, 0, 0);
@@ -89,21 +89,49 @@ const createScene = () => {
         if (k in keys) keys[k] = false;
     });
 
-    // ==================== CÂMERA THIRD-PERSON PERFEITA ====================
-    const camera = new BABYLON.FreeCamera("sceneCamera", new BABYLON.Vector3(0, 5, -12), scene); // Cria a câmera livre com posição inicial
-    camera.inputs.clear(); // Remove entradas padrão (mouse/teclado) para evitar controle automático
-    if (camera.inputs.attached?.mouse) camera.inputs.attached.mouse.detachControl(); // Garante que o mouse não controle a câmera
-    if (camera.inputs.attached?.keyboard) camera.inputs.attached.keyboard.detachControl(); // Garante que o teclado não controle a câmera
-    camera.inputs.addGamepad(); // Mantém suporte a gamepad (se existir)
-
-    const cameraOffset = new BABYLON.Vector3(0, 6, 15); // Offset da câmera em relação ao godzilla (x, y, z)
-    let cameraCurrentRotation = 0; // Rotação atual da câmera (interpolada)
+    // ==================== CÂMERA THIRD-PERSON COM CONTROLE DE MOUSE ====================
+    const camera = new BABYLON.ArcRotateCamera(
+        "camera", 
+        -Math.PI / 2, // Ângulo horizontal inicial (alpha)
+        Math.PI / 3,  // Ângulo vertical inicial (beta)
+        20,           // Distância do alvo (radius)
+        new BABYLON.Vector3(0, 1, 0), // Ponto inicial que a câmera olha
+        scene
+    );
+    
+    // Configurações da câmera
+    camera.attachControl(canvas, true);
+    camera.lowerRadiusLimit = 5;  // Distância mínima
+    camera.upperRadiusLimit = 20; // Distância máxima
+    camera.lowerBetaLimit = 0.1;  // Limite inferior vertical (evita ir abaixo do chão)
+    camera.upperBetaLimit = Math.PI / 2.1; // Limite superior vertical
+    camera.wheelPrecision = 30; // Sensibilidade do scroll do mouse
+    
+    // Ativa movimento da câmera sem precisar clicar
+    canvas.addEventListener("click", () => {
+        canvas.requestPointerLock = canvas.requestPointerLock || canvas.mozRequestPointerLock || canvas.webkitRequestPointerLock;
+        if (canvas.requestPointerLock) {
+            canvas.requestPointerLock();
+        }
+    });
+    
+    // Controle manual do mouse quando pointer lock está ativo
+    const CAMERA_SENSITIVITY = 0.0001;
+    document.addEventListener("mousemove", (e) => {
+        if (document.pointerLockElement === canvas) {
+            camera.alpha += e.movementX * CAMERA_SENSITIVITY;
+            camera.beta += e.movementY * CAMERA_SENSITIVITY;
+            
+            // Limita o beta para não girar além dos limites
+            camera.beta = Math.max(camera.lowerBetaLimit, Math.min(camera.upperBetaLimit, camera.beta));
+        }
+    });
 
     // ==================== TIROS / PROJÉTEIS ====================
-    const PROJECTILE_SPEED = 55;
-    const FIRE_COOLDOWN = 0.1; // segundos entre disparos ao segurar
+    const PROJECTILE_SPEED = 35;
+    const FIRE_COOLDOWN = 0.01; // segundos entre disparos ao segurar
     const PROJECTILE_LIFETIME = 2; // segundos
-    const PROJECTILE_SIZE = 0.1;
+    const PROJECTILE_SIZE = 0.06;
     let isFiring = false;
     let fireCooldownTimer = 0;
     const projectiles = [];
@@ -222,23 +250,12 @@ const createScene = () => {
         // Atualiza o godzilla para apontar na direção controlada pelas teclas
         if (godzilla && godzilla.rotation) {
             godzilla.rotation.y = godzillaRotationY;
-            
-            // Debug: imprime a rotação a cada 60 frames (aprox 1 segundo)
-            if (Math.random() < 0.016) {
-                console.log("Rotação Y do Godzilla:", godzilla.rotation.y, "Variável:", godzillaRotationY);
-            }
         }
 
-        // Câmera segue a direção do godzilla com movimento suave (alpha + 180°)
-        cameraCurrentRotation = BABYLON.Scalar.Lerp(cameraCurrentRotation, godzillaRotationY, 0.5); // Suaviza a rotação da câmera rumo ao ângulo do godzilla
-        const rotatedOffset = BABYLON.Vector3.TransformCoordinates( // Converte o offset para a rotação atual da câmera
-             cameraOffset, // Offset base (atrás e acima do godzilla)
-             BABYLON.Matrix.RotationY(cameraCurrentRotation + Math.PI) // Soma 180° para ficar atrás da direção apontada
-         );
-         const targetPos = godzilla.position.clone(); // Posição alvo começa na posição do godzilla
-         targetPos.addInPlace(rotatedOffset); // Soma o offset rotacionado para obter o ponto de câmera desejado
-         camera.position = BABYLON.Vector3.Lerp(camera.position, targetPos, 0.1); // Move a câmera suavemente até o alvo
-         camera.setTarget(godzilla.position); // Faz a câmera olhar para o godzilla
+        // Câmera segue o godzilla suavemente
+        const targetCameraPosition = godzilla.position.clone();
+        targetCameraPosition.y += 2; // Ajusta altura do ponto focal
+        camera.setTarget(BABYLON.Vector3.Lerp(camera.target, targetCameraPosition, 0.1));
     });
 
     // ==================== CHÃO E CAIXAS DE REFERÊNCIA ====================
