@@ -21,7 +21,7 @@ const createScene = () => {
 
     // ==================== MODELO 3D CONTROLÁVEL ====================
     let godzilla = BABYLON.MeshBuilder.CreateSphere("tempSphere", { diameter: 2 }, scene);
-    godzilla.position.y = 1;
+    godzilla.position.y = 0;
     godzilla.isVisible = false; // Invisível até o modelo carregar
     let godzillaLoaded = false; // Flag para saber se o modelo foi carregado
 
@@ -43,10 +43,10 @@ const createScene = () => {
                 godzilla = meshes[0];
             }
             
-            godzilla.position.y = 1;
+            godzilla.position.y = 0;
             
             // Ajustar escala - Godzilla TAMANHO
-            godzilla.scaling = new BABYLON.Vector3(0.005, 0.005, 0.005);
+            godzilla.scaling = new BABYLON.Vector3(0.007, 0.007, 0.007);
             
             // Resetar rotação inicial do modelo
             godzilla.rotation = new BABYLON.Vector3(0, 0, 0);
@@ -190,8 +190,8 @@ const createScene = () => {
             velocityY += GRAVITY * dt;
             godzilla.position.y += velocityY * dt;
         }
-        if (godzilla.position.y <= 1) {
-            godzilla.position.y = 1;
+        if (godzilla.position.y <= 0) {  // godzilla posiçãoY
+            godzilla.position.y = 0;
             velocityY = 0;
             isGrounded = true;
         }
