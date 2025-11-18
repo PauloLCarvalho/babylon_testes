@@ -36,8 +36,8 @@ const createScene = () => {
             sphere = meshes[0];
             sphere.position.y = 1;
             
-            // Ajustar escala - Godzilla está muito grande
-            sphere.scaling = new BABYLON.Vector3(0.007, 0.007, 0.007);
+            // Ajustar escala - Godzilla TAMANHO
+            sphere.scaling = new BABYLON.Vector3(0.007, 0.007, 0.007); 
         }
     }, null, function (scene, message) {
         console.error("Erro ao carregar modelo:", message);
