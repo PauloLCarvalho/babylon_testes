@@ -20,29 +20,54 @@ const createScene = () => {
     dirLight.intensity = 0.5;
 
     // ==================== MODELO 3D CONTROLÁVEL ====================
-    let sphere = BABYLON.MeshBuilder.CreateSphere("tempSphere", { diameter: 2 }, scene);
-    sphere.position.y = 1;
-    sphere.isVisible = false; // Invisível até o modelo carregar
+    let godzilla = BABYLON.MeshBuilder.CreateSphere("tempSphere", { diameter: 2 }, scene);
+    godzilla.position.y = 1;
+    godzilla.isVisible = false; // Invisível até o modelo carregar
+    let godzillaLoaded = false; // Flag para saber se o modelo foi carregado
 
-    // Carregar modelo do leão
-    BABYLON.SceneLoader.ImportMesh("", "./source/", "godzilla_first_walk_animationscrunchy32205_alt.glb", scene, function (meshes) {
+    // Carregar modelo do Godzilla
+    BABYLON.SceneLoader.ImportMesh("", "./source/", "godzilla_first_walk_animationscrunchy32205_alt.glb", scene, function (meshes, particleSystems, skeletons, animationGroups) {
         console.log("Modelo do Godzilla carregado com sucesso!");
+        console.log("Número de meshes:", meshes.length);
+        console.log("Número de animações:", animationGroups.length);
         
         if (meshes.length > 0) {
             // Remove a esfera temporária
-            sphere.dispose();
+            godzilla.dispose();
             
-            // Usa o modelo carregado
-            sphere = meshes[0];
-            sphere.position.y = 1;
+            // Usa o root mesh ou cria um container
+            if (meshes[0].name === "__root__" || meshes.length > 1) {
+                // Se há múltiplos meshes, usa o root ou cria um TransformNode
+                godzilla = meshes[0];
+            } else {
+                godzilla = meshes[0];
+            }
+            
+            godzilla.position.y = 1;
             
             // Ajustar escala - Godzilla TAMANHO
-            sphere.scaling = new BABYLON.Vector3(0.007, 0.007, 0.007); 
+            godzilla.scaling = new BABYLON.Vector3(0.007, 0.007, 0.007);
+            
+            // Resetar rotação inicial do modelo
+            godzilla.rotation = new BABYLON.Vector3(0, 0, 0);
+            
+            // Guardar as animações
+            godzilla.animationGroups = animationGroups;
+            
+            // Parar todas as animações inicialmente
+            animationGroups.forEach(ag => {
+                ag.stop();
+                console.log("Animação encontrada:", ag.name);
+            });
+            
+            godzillaLoaded = true;
+            console.log("Godzilla configurado:", godzilla.name);
         }
     }, null, function (scene, message) {
         console.error("Erro ao carregar modelo:", message);
         // Torna a esfera temporária visível como fallback
-        sphere.isVisible = true;
+        godzilla.isVisible = true;
+        godzillaLoaded = true;
     });
 
     const MOVE_SPEED = 4;
@@ -51,7 +76,7 @@ const createScene = () => {
     const GRAVITY = -20;
     let velocityY = 0;
     let isGrounded = true;
-    let sphereRotationY = 0; // Ângulo de rotação da esfera
+    let godzillaRotationY = 0; // Ângulo de rotação do godzilla
     const keys = { w: false, a: false, s: false, d: false };
 
     window.addEventListener("keydown", e => {
@@ -71,26 +96,8 @@ const createScene = () => {
     if (camera.inputs.attached?.keyboard) camera.inputs.attached.keyboard.detachControl(); // Garante que o teclado não controle a câmera
     camera.inputs.addGamepad(); // Mantém suporte a gamepad (se existir)
 
-    const cameraOffset = new BABYLON.Vector3(0, 6, 15); // Offset da câmera em relação à esfera (x, y, z)
+    const cameraOffset = new BABYLON.Vector3(0, 6, 15); // Offset da câmera em relação ao godzilla (x, y, z)
     let cameraCurrentRotation = 0; // Rotação atual da câmera (interpolada)
-
-    // ==================== SETA INDICADORA DE DIREÇÃO ====================
-    const arrow = BABYLON.MeshBuilder.CreateCylinder("arrow", { 
-        height: 3, 
-        diameterTop: 0, 
-        diameterBottom: 0.5, 
-        tessellation: 3 
-    }, scene);
-    arrow.rotation.x = Math.PI / 2; // Rotaciona para ficar deitada
-    arrow.position.y = 2; // Levemente acima do chão
-    
-    const arrowMat = new BABYLON.StandardMaterial("arrowMat", scene);
-    arrowMat.diffuseColor = new BABYLON.Color3(1, 0.5, 0); // Laranja
-    arrowMat.emissiveColor = new BABYLON.Color3(0.3, 0.15, 0); // Brilho
-    arrow.material = arrowMat;
-
-    let lastPosition = sphere.position.clone();
-    let movementDirection = new BABYLON.Vector3(0, 0, 0);
 
     // ==================== TIROS / PROJÉTEIS ====================
     const PROJECTILE_SPEED = 55;
@@ -114,38 +121,49 @@ const createScene = () => {
     scene.onBeforeRenderObservable.add(() => {
         const dt = engine.getDeltaTime() / 1000;
 
-        // Rotação da esfera (A e D)
-        if (keys.a) sphereRotationY -= ROTATION_SPEED * dt;
-        if (keys.d) sphereRotationY += ROTATION_SPEED * dt;
+        // Rotação do godzilla (A e D)
+        if (keys.a) godzillaRotationY -= ROTATION_SPEED * dt;
+        if (keys.d) godzillaRotationY += ROTATION_SPEED * dt;
 
-        // Movimento para frente/trás baseado na direção da esfera (W e S)
+        // Verifica se está em movimento
+        const isMoving = keys.w || keys.s;
+
+        // Movimento para frente/trás baseado na direção do godzilla (W e S)
         if (keys.w) {
-            sphere.position.x += Math.sin(sphereRotationY) * MOVE_SPEED * dt;
-            sphere.position.z += Math.cos(sphereRotationY) * MOVE_SPEED * dt;
+            godzilla.position.x += Math.sin(godzillaRotationY) * MOVE_SPEED * dt;
+            godzilla.position.z += Math.cos(godzillaRotationY) * MOVE_SPEED * dt;
         }
         if (keys.s) {
-            sphere.position.x -= Math.sin(sphereRotationY) * MOVE_SPEED * dt;
-            sphere.position.z -= Math.cos(sphereRotationY) * MOVE_SPEED * dt;
+            godzilla.position.x -= Math.sin(godzillaRotationY) * MOVE_SPEED * dt;
+            godzilla.position.z -= Math.cos(godzillaRotationY) * MOVE_SPEED * dt;
         }
 
-        // Rolagem realista da bola baseada no movimento
-        if (keys.w) {
-            sphere.rotation.x += MOVE_SPEED * dt * 2;
-        }
-        if (keys.s) {
-            sphere.rotation.x -= MOVE_SPEED * dt * 2;
-        }
-        if (keys.a || keys.d) {
-            sphere.rotation.z += (keys.a ? -ROTATION_SPEED : ROTATION_SPEED) * dt * 2;
+        // Controla animação baseado no movimento
+        if (godzilla.animationGroups && godzilla.animationGroups.length > 0) {
+            if (isMoving) {
+                // Inicia animação se não estiver rodando
+                godzilla.animationGroups.forEach(ag => {
+                    if (!ag.isPlaying) {
+                        ag.play(true); // true = loop
+                    }
+                });
+            } else {
+                // Para animação se não estiver em movimento
+                godzilla.animationGroups.forEach(ag => {
+                    if (ag.isPlaying) {
+                        ag.stop();
+                    }
+                });
+            }
         }
 
         // Gravidade e pulo
         if (!isGrounded) {
             velocityY += GRAVITY * dt;
-            sphere.position.y += velocityY * dt;
+            godzilla.position.y += velocityY * dt;
         }
-        if (sphere.position.y <= 1) {
-            sphere.position.y = 1;
+        if (godzilla.position.y <= 1) {
+            godzilla.position.y = 1;
             velocityY = 0;
             isGrounded = true;
         }
@@ -154,12 +172,12 @@ const createScene = () => {
         fireCooldownTimer -= dt;
         if (isFiring && fireCooldownTimer <= 0) {
             fireCooldownTimer = FIRE_COOLDOWN;
-            const yaw = sphereRotationY;
+            const yaw = godzillaRotationY;
             const dir = new BABYLON.Vector3(Math.sin(yaw), 0, Math.cos(yaw)).normalize();
             const spawnPos = new BABYLON.Vector3(
-                sphere.position.x + dir.x * 1.8,
+                godzilla.position.x + dir.x * 1.8,
                 2,
-                sphere.position.z + dir.z * 1.8
+                godzilla.position.z + dir.z * 1.8
             );
             const bullet = BABYLON.MeshBuilder.CreateSphere("bullet", { diameter: PROJECTILE_SIZE * 2 }, scene);
             bullet.position.copyFrom(spawnPos);
@@ -201,26 +219,26 @@ const createScene = () => {
             }
         }
 
-        // Atualiza a seta para apontar sempre na direção que a esfera está mirando
-        arrow.position.x = sphere.position.x;
-        arrow.position.z = sphere.position.z;
-        arrow.rotation.y = sphereRotationY;
-        arrow.isVisible = true;
+        // Atualiza o godzilla para apontar na direção controlada pelas teclas
+        if (godzilla && godzilla.rotation) {
+            godzilla.rotation.y = godzillaRotationY;
+            
+            // Debug: imprime a rotação a cada 60 frames (aprox 1 segundo)
+            if (Math.random() < 0.016) {
+                console.log("Rotação Y do Godzilla:", godzilla.rotation.y, "Variável:", godzillaRotationY);
+            }
+        }
 
-        // Mantém o alpha (yaw) da esfera igual ao da seta
-        sphere.rotation.y = arrow.rotation.y;
-
-        // Câmera segue a direção da seta com movimento suave (alpha + 180°)
-        // [DESATIVADO A PEDIDO]: As linhas abaixo realizavam o giro e posicionamento da câmera.
-        cameraCurrentRotation = BABYLON.Scalar.Lerp(cameraCurrentRotation, sphereRotationY, 0.5); // Suaviza a rotação da câmera rumo ao ângulo da esfera
+        // Câmera segue a direção do godzilla com movimento suave (alpha + 180°)
+        cameraCurrentRotation = BABYLON.Scalar.Lerp(cameraCurrentRotation, godzillaRotationY, 0.5); // Suaviza a rotação da câmera rumo ao ângulo do godzilla
         const rotatedOffset = BABYLON.Vector3.TransformCoordinates( // Converte o offset para a rotação atual da câmera
-             cameraOffset, // Offset base (atrás e acima da esfera)
+             cameraOffset, // Offset base (atrás e acima do godzilla)
              BABYLON.Matrix.RotationY(cameraCurrentRotation + Math.PI) // Soma 180° para ficar atrás da direção apontada
          );
-         const targetPos = sphere.position.clone(); // Posição alvo começa na posição da esfera
+         const targetPos = godzilla.position.clone(); // Posição alvo começa na posição do godzilla
          targetPos.addInPlace(rotatedOffset); // Soma o offset rotacionado para obter o ponto de câmera desejado
          camera.position = BABYLON.Vector3.Lerp(camera.position, targetPos, 0.1); // Move a câmera suavemente até o alvo
-         camera.setTarget(sphere.position); // Faz a câmera olhar para a esfera
+         camera.setTarget(godzilla.position); // Faz a câmera olhar para o godzilla
     });
 
     // ==================== CHÃO E CAIXAS DE REFERÊNCIA ====================
