@@ -14,18 +14,36 @@ const createScene = () => {
 
     // Luz
     new BABYLON.HemisphericLight("light", new BABYLON.Vector3(0, 1, 0), scene).intensity = 0.9;
+    
+    // Luz direcional adicional para melhor iluminação do modelo
+    const dirLight = new BABYLON.DirectionalLight("dirLight", new BABYLON.Vector3(-1, -2, -1), scene);
+    dirLight.intensity = 0.5;
 
-    // ==================== ESFERA CONTROLÁVEL ====================
-    const sphere = BABYLON.MeshBuilder.CreateSphere("sphere", { diameter: 2 }, scene);
+    // ==================== MODELO 3D CONTROLÁVEL ====================
+    let sphere = BABYLON.MeshBuilder.CreateSphere("tempSphere", { diameter: 2 }, scene);
     sphere.position.y = 1;
+    sphere.isVisible = false; // Invisível até o modelo carregar
 
-    // Adiciona textura de ferro na esfera
-    const sphereMat = new BABYLON.StandardMaterial("sphereMat", scene);
-    sphereMat.diffuseTexture = new BABYLON.Texture("https://assets.babylonjs.com/textures/earth.jpg", scene); // Textura exemplo estável
-    sphereMat.diffuseTexture.uScale = 1; // Sem repetição
-    sphereMat.diffuseTexture.vScale = 1;
-    sphereMat.specularColor = new BABYLON.Color3(0.5, 0.5, 0.5); // Brilho metálico leve
-    sphere.material = sphereMat;
+    // Carregar modelo do leão
+    BABYLON.SceneLoader.ImportMesh("", "./source/", "godzilla_first_walk_animationscrunchy32205_alt.glb", scene, function (meshes) {
+        console.log("Modelo do Godzilla carregado com sucesso!");
+        
+        if (meshes.length > 0) {
+            // Remove a esfera temporária
+            sphere.dispose();
+            
+            // Usa o modelo carregado
+            sphere = meshes[0];
+            sphere.position.y = 1;
+            
+            // Ajustar escala - Godzilla está muito grande
+            sphere.scaling = new BABYLON.Vector3(0.007, 0.007, 0.007);
+        }
+    }, null, function (scene, message) {
+        console.error("Erro ao carregar modelo:", message);
+        // Torna a esfera temporária visível como fallback
+        sphere.isVisible = true;
+    });
 
     const MOVE_SPEED = 4;
     const ROTATION_SPEED = 2; // Velocidade de rotação em radianos por segundo
