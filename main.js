@@ -20,10 +20,12 @@ const createScene = () => {
     sphere.position.y = 1;
 
     const MOVE_SPEED = 8;
+    const ROTATION_SPEED = 2; // Velocidade de rotação em radianos por segundo
     const JUMP_POWER = 7;
     const GRAVITY = -20;
     let velocityY = 0;
     let isGrounded = true;
+    let sphereRotationY = 0; // Ângulo de rotação da esfera
     const keys = { w: false, a: false, s: false, d: false };
 
     window.addEventListener("keydown", e => {
@@ -37,45 +39,61 @@ const createScene = () => {
     });
 
     // ==================== CÂMERA THIRD-PERSON PERFEITA ====================
-    const camera = new BABYLON.FreeCamera("sceneCamera", new BABYLON.Vector3(0, 5, -12), scene);
-    camera.inputs.clear();
-    if (camera.inputs.attached?.mouse) camera.inputs.attached.mouse.detachControl();
-    if (camera.inputs.attached?.keyboard) camera.inputs.attached.keyboard.detachControl();
-    camera.inputs.addGamepad();
+    const camera = new BABYLON.FreeCamera("sceneCamera", new BABYLON.Vector3(0, 5, -12), scene); // Cria a câmera livre com posição inicial
+    camera.inputs.clear(); // Remove entradas padrão (mouse/teclado) para evitar controle automático
+    if (camera.inputs.attached?.mouse) camera.inputs.attached.mouse.detachControl(); // Garante que o mouse não controle a câmera
+    if (camera.inputs.attached?.keyboard) camera.inputs.attached.keyboard.detachControl(); // Garante que o teclado não controle a câmera
+    camera.inputs.addGamepad(); // Mantém suporte a gamepad (se existir)
 
-    const cameraOffset = new BABYLON.Vector3(0, 4, 12);
-    let cameraTargetRotation = 0;
-    let isRotatingCamera = false;
+    const cameraOffset = new BABYLON.Vector3(0, 6, 15); // Offset da câmera em relação à esfera (x, y, z)
+    let cameraCurrentRotation = 0; // Rotação atual da câmera (interpolada)
 
-    scene.onPointerObservable.add((evt) => {
-        if (evt.type === BABYLON.PointerEventTypes.POINTERDOWN && evt.event.button === 2) {
-            isRotatingCamera = true;
-            canvas.style.cursor = "grabbing";
-        }
-        if (evt.type === BABYLON.PointerEventTypes.POINTERUP || evt.type === BABYLON.PointerEventTypes.POINTEROUT) {
-            isRotatingCamera = false;
-            canvas.style.cursor = "default";
-        }
-        if (isRotatingCamera && evt.type === BABYLON.PointerEventTypes.POINTERMOVE) {
-            cameraTargetRotation += evt.event.movementX * 0.008;
-        }
-    });
+    // ==================== SETA INDICADORA DE DIREÇÃO ====================
+    const arrow = BABYLON.MeshBuilder.CreateCylinder("arrow", { 
+        height: 3, 
+        diameterTop: 0, 
+        diameterBottom: 0.5, 
+        tessellation: 3 
+    }, scene);
+    arrow.rotation.x = Math.PI / 2; // Rotaciona para ficar deitada
+    arrow.position.y = 2; // Levemente acima do chão
+    
+    const arrowMat = new BABYLON.StandardMaterial("arrowMat", scene);
+    arrowMat.diffuseColor = new BABYLON.Color3(1, 0.5, 0); // Laranja
+    arrowMat.emissiveColor = new BABYLON.Color3(0.3, 0.15, 0); // Brilho
+    arrow.material = arrowMat;
+
+    let lastPosition = sphere.position.clone();
+    let movementDirection = new BABYLON.Vector3(0, 0, 0);
 
     // ==================== LOOP PRINCIPAL ====================
     scene.onBeforeRenderObservable.add(() => {
         const dt = engine.getDeltaTime() / 1000;
 
-        // Movimento da esfera
-        if (keys.w) sphere.position.z -= MOVE_SPEED * dt;
-        if (keys.s) sphere.position.z += MOVE_SPEED * dt;
-        if (keys.a) sphere.position.x += MOVE_SPEED * dt;
-        if (keys.d) sphere.position.x -= MOVE_SPEED * dt;
+        // Rotação da esfera (A e D)
+        if (keys.a) sphereRotationY -= ROTATION_SPEED * dt;
+        if (keys.d) sphereRotationY += ROTATION_SPEED * dt;
 
-        // Rolagem realista da bola
-        if (keys.w) sphere.rotation.x += MOVE_SPEED * dt * 2;
-        if (keys.s) sphere.rotation.x -= MOVE_SPEED * dt * 2;
-        if (keys.a) sphere.rotation.z -= MOVE_SPEED * dt * 2;
-        if (keys.d) sphere.rotation.z += MOVE_SPEED * dt * 2;
+        // Movimento para frente/trás baseado na direção da esfera (W e S)
+        if (keys.w) {
+            sphere.position.x += Math.sin(sphereRotationY) * MOVE_SPEED * dt;
+            sphere.position.z += Math.cos(sphereRotationY) * MOVE_SPEED * dt;
+        }
+        if (keys.s) {
+            sphere.position.x -= Math.sin(sphereRotationY) * MOVE_SPEED * dt;
+            sphere.position.z -= Math.cos(sphereRotationY) * MOVE_SPEED * dt;
+        }
+
+        // Rolagem realista da bola baseada no movimento
+        if (keys.w) {
+            sphere.rotation.x += MOVE_SPEED * dt * 2;
+        }
+        if (keys.s) {
+            sphere.rotation.x -= MOVE_SPEED * dt * 2;
+        }
+        if (keys.a || keys.d) {
+            sphere.rotation.z += (keys.a ? -ROTATION_SPEED : ROTATION_SPEED) * dt * 2;
+        }
 
         // Gravidade e pulo
         if (!isGrounded) {
@@ -88,12 +106,23 @@ const createScene = () => {
             isGrounded = true;
         }
 
-        // Câmera segue suavemente com rotação
-        const rotatedOffset = BABYLON.Vector3.TransformCoordinates(cameraOffset, BABYLON.Matrix.RotationY(cameraTargetRotation));
-        const targetPos = sphere.position.clone();
-        targetPos.addInPlace(rotatedOffset);
-        camera.position = BABYLON.Vector3.Lerp(camera.position, targetPos, 0.1);
-        camera.setTarget(sphere.position);
+        // Atualiza a seta para apontar sempre na direção que a esfera está mirando
+        arrow.position.x = sphere.position.x;
+        arrow.position.z = sphere.position.z;
+        arrow.rotation.y = sphereRotationY;
+        arrow.isVisible = true;
+
+        // Câmera segue a direção da seta com movimento suave (alpha + 180°)
+        // [DESATIVADO A PEDIDO]: As linhas abaixo realizavam o giro e posicionamento da câmera.
+        cameraCurrentRotation = BABYLON.Scalar.Lerp(cameraCurrentRotation, sphereRotationY, 0.5); // Suaviza a rotação da câmera rumo ao ângulo da esfera
+        const rotatedOffset = BABYLON.Vector3.TransformCoordinates( // Converte o offset para a rotação atual da câmera
+             cameraOffset, // Offset base (atrás e acima da esfera)
+             BABYLON.Matrix.RotationY(cameraCurrentRotation + Math.PI) // Soma 180° para ficar atrás da direção apontada
+         );
+         const targetPos = sphere.position.clone(); // Posição alvo começa na posição da esfera
+         targetPos.addInPlace(rotatedOffset); // Soma o offset rotacionado para obter o ponto de câmera desejado
+         camera.position = BABYLON.Vector3.Lerp(camera.position, targetPos, 0.1); // Move a câmera suavemente até o alvo
+         camera.setTarget(sphere.position); // Faz a câmera olhar para a esfera
     });
 
     // ==================== CHÃO E CAIXAS DE REFERÊNCIA ====================
