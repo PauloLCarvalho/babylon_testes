@@ -19,7 +19,15 @@ const createScene = () => {
     const sphere = BABYLON.MeshBuilder.CreateSphere("sphere", { diameter: 2 }, scene);
     sphere.position.y = 1;
 
-    const MOVE_SPEED = 8;
+    // Adiciona textura de ferro na esfera
+    const sphereMat = new BABYLON.StandardMaterial("sphereMat", scene);
+    sphereMat.diffuseTexture = new BABYLON.Texture("https://assets.babylonjs.com/textures/earth.jpg", scene); // Textura exemplo estável
+    sphereMat.diffuseTexture.uScale = 1; // Sem repetição
+    sphereMat.diffuseTexture.vScale = 1;
+    sphereMat.specularColor = new BABYLON.Color3(0.5, 0.5, 0.5); // Brilho metálico leve
+    sphere.material = sphereMat;
+
+    const MOVE_SPEED = 4;
     const ROTATION_SPEED = 2; // Velocidade de rotação em radianos por segundo
     const JUMP_POWER = 7;
     const GRAVITY = -20;
@@ -66,6 +74,24 @@ const createScene = () => {
     let lastPosition = sphere.position.clone();
     let movementDirection = new BABYLON.Vector3(0, 0, 0);
 
+    // ==================== TIROS / PROJÉTEIS ====================
+    const PROJECTILE_SPEED = 55;
+    const FIRE_COOLDOWN = 0.1; // segundos entre disparos ao segurar
+    const PROJECTILE_LIFETIME = 2; // segundos
+    const PROJECTILE_SIZE = 0.1;
+    let isFiring = false;
+    let fireCooldownTimer = 0;
+    const projectiles = [];
+
+    // Usa eventos de ponteiro do Babylon na própria cena (mais confiável que window)
+    scene.onPointerObservable.add((pointerInfo) => {
+        if (pointerInfo.type === BABYLON.PointerEventTypes.POINTERDOWN) {
+            if (pointerInfo.event.button === 0) isFiring = true;
+        } else if (pointerInfo.type === BABYLON.PointerEventTypes.POINTERUP) {
+            if (pointerInfo.event.button === 0) isFiring = false;
+        }
+    });
+
     // ==================== LOOP PRINCIPAL ====================
     scene.onBeforeRenderObservable.add(() => {
         const dt = engine.getDeltaTime() / 1000;
@@ -106,11 +132,65 @@ const createScene = () => {
             isGrounded = true;
         }
 
+        // Disparo contínuo com cooldown
+        fireCooldownTimer -= dt;
+        if (isFiring && fireCooldownTimer <= 0) {
+            fireCooldownTimer = FIRE_COOLDOWN;
+            const yaw = sphereRotationY;
+            const dir = new BABYLON.Vector3(Math.sin(yaw), 0, Math.cos(yaw)).normalize();
+            const spawnPos = new BABYLON.Vector3(
+                sphere.position.x + dir.x * 1.8,
+                2,
+                sphere.position.z + dir.z * 1.8
+            );
+            const bullet = BABYLON.MeshBuilder.CreateSphere("bullet", { diameter: PROJECTILE_SIZE * 2 }, scene);
+            bullet.position.copyFrom(spawnPos);
+            const bmat = new BABYLON.StandardMaterial("bulletMat", scene);
+            bmat.emissiveColor = new BABYLON.Color3(1, 0.9, 0.2);
+            bullet.material = bmat;
+            projectiles.push({ mesh: bullet, dir: dir, age: 0 });
+        }
+
+        // Atualiza projéteis + colisão com caixas
+        for (let i = projectiles.length - 1; i >= 0; i--) {
+            const p = projectiles[i];
+            p.mesh.position.addInPlace(p.dir.scale(PROJECTILE_SPEED * dt));
+
+            // Colisão com caixas (bounding boxes)
+            let collided = false;
+            for (let b = boxes.length - 1; b >= 0; b--) {
+                const box = boxes[b];
+                if (p.mesh.intersectsMesh(box, false)) {
+                    // Remove a caixa da lista e inicia animação de quebra
+                    boxes.splice(b, 1);
+                    breakBox(box);
+                    collided = true;
+                    break;
+                }
+            }
+
+            if (collided) {
+                p.mesh.dispose();
+                projectiles.splice(i, 1);
+                continue;
+            }
+
+            // Tempo de vida
+            p.age += dt;
+            if (p.age >= PROJECTILE_LIFETIME) {
+                p.mesh.dispose();
+                projectiles.splice(i, 1);
+            }
+        }
+
         // Atualiza a seta para apontar sempre na direção que a esfera está mirando
         arrow.position.x = sphere.position.x;
         arrow.position.z = sphere.position.z;
         arrow.rotation.y = sphereRotationY;
         arrow.isVisible = true;
+
+        // Mantém o alpha (yaw) da esfera igual ao da seta
+        sphere.rotation.y = arrow.rotation.y;
 
         // Câmera segue a direção da seta com movimento suave (alpha + 180°)
         // [DESATIVADO A PEDIDO]: As linhas abaixo realizavam o giro e posicionamento da câmera.
@@ -128,9 +208,36 @@ const createScene = () => {
     // ==================== CHÃO E CAIXAS DE REFERÊNCIA ====================
     const ground = BABYLON.MeshBuilder.CreateGround("ground", { width: 100, height: 100 }, scene);
     const groundMat = new BABYLON.StandardMaterial("groundMat", scene);
-    groundMat.diffuseColor = new BABYLON.Color3(0.3, 0.3, 0.3);
-    groundMat.wireframe = true;
+    groundMat.diffuseTexture = new BABYLON.Texture("https://assets.babylonjs.com/textures/grass.png", scene);
+    groundMat.diffuseTexture.uScale = 20; // Repetição horizontal (ajuste conforme necessário para melhor tiling)
+    groundMat.diffuseTexture.vScale = 20; // Repetição vertical
+    groundMat.diffuseColor = new BABYLON.Color3(1, 1, 1); // Cor branca para preservar as cores da textura
+    groundMat.wireframe = false; // Desativa wireframe para ver a textura claramente (ative se quiser debug)
     ground.material = groundMat;
+
+    // Mantém referência às caixas para colisões
+    const boxes = [];
+
+    // Anima e remove uma caixa quando atingida por projétil
+    const breakBox = (box) => {
+        if (!box || box._breaking) return;
+        box._breaking = true;
+        const anim = new BABYLON.Animation(
+            "shrink",
+            "scaling",
+            60,
+            BABYLON.Animation.ANIMATIONTYPE_VECTOR3,
+            BABYLON.Animation.ANIMATIONLOOPMODE_CONSTANT
+        );
+        anim.setKeys([
+            { frame: 0, value: box.scaling.clone() },
+            { frame: 12, value: new BABYLON.Vector3(0, 0, 0) }
+        ]);
+        box.animations = [anim];
+        scene.beginAnimation(box, 0, 12, false, 1.5, () => {
+            box.dispose();
+        });
+    };
 
     const createBox = (x, z, color) => {
         const box = BABYLON.MeshBuilder.CreateBox("box", { size: 2 }, scene);
@@ -138,6 +245,8 @@ const createScene = () => {
         const mat = new BABYLON.StandardMaterial("mat", scene);
         mat.diffuseColor = color;
         box.material = mat;
+        boxes.push(box);
+        return box;
     };
 
     createBox(5, 0,   new BABYLON.Color3(1, 0, 0));   // vermelho
