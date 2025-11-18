@@ -169,10 +169,21 @@ const createScene = () => {
         // Controla animação baseado no movimento
         if (godzilla.animationGroups && godzilla.animationGroups.length > 0) {
             if (isMoving) {
-                // Inicia animação se não estiver rodando
                 godzilla.animationGroups.forEach(ag => {
-                    if (!ag.isPlaying) {
-                        ag.play(true); // true = loop
+                    if (keys.w) {
+                        // Movimento para frente - animação normal
+                        if (!ag.isPlaying || ag.speedRatio < 0) {
+                            ag.stop();
+                            ag.speedRatio = 1.3; // Velocidade da animação
+                            ag.play(true); // true = loop
+                        }
+                    } else if (keys.s) {
+                        // Movimento para trás - animação reversa
+                        if (!ag.isPlaying || ag.speedRatio > 0) {
+                            ag.stop();
+                            ag.speedRatio = -1.3; // Velocidade da animação reversa
+                            ag.play(true); // true = loop
+                        }
                     }
                 });
             } else {
@@ -203,14 +214,14 @@ const createScene = () => {
             const yaw = godzillaRotationY;
             const dir = new BABYLON.Vector3(Math.sin(yaw), 0, Math.cos(yaw)).normalize();
             const spawnPos = new BABYLON.Vector3(
-                godzilla.position.x + dir.x * 1.8,
-                2,
-                godzilla.position.z + dir.z * 1.8
+                godzilla.position.x + dir.x * 1.5,
+                4.45, // projetil altura inicial projetil.y 
+                godzilla.position.z + dir.z * 1.5
             );
             const bullet = BABYLON.MeshBuilder.CreateSphere("bullet", { diameter: PROJECTILE_SIZE * 2 }, scene);
             bullet.position.copyFrom(spawnPos);
             const bmat = new BABYLON.StandardMaterial("bulletMat", scene);
-            bmat.emissiveColor = new BABYLON.Color3(1, 0.9, 0.2);
+            bmat.emissiveColor = new BABYLON.Color3(1, 0.9, 0.2); // projetil - cor amarela brilhante 
             bullet.material = bmat;
             projectiles.push({ mesh: bullet, dir: dir, age: 0 });
         }
@@ -284,7 +295,7 @@ const createScene = () => {
         );
         anim.setKeys([
             { frame: 0, value: box.scaling.clone() },
-            { frame: 12, value: new BABYLON.Vector3(0, 0, 0) }
+            { frame: 12, value: new BABYLON.Vector3(0, 0, 0) } //
         ]);
         box.animations = [anim];
         scene.beginAnimation(box, 0, 12, false, 1.5, () => {
@@ -293,7 +304,7 @@ const createScene = () => {
     };
 
     const createBox = (x, z, color) => {
-        const box = BABYLON.MeshBuilder.CreateBox("box", { size: 2 }, scene);
+        const box = BABYLON.MeshBuilder.CreateBox("box", { size: 8 }, scene);
         box.position.set(x, 1, z);
         const mat = new BABYLON.StandardMaterial("mat", scene);
         mat.diffuseColor = color;
@@ -301,11 +312,15 @@ const createScene = () => {
         boxes.push(box);
         return box;
     };
-
-    createBox(5, 0,   new BABYLON.Color3(1, 0, 0));   // vermelho
-    createBox(0, 5,   new BABYLON.Color3(0, 1, 0));   // verde
-    createBox(-5, 0,  new BABYLON.Color3(0, 0, 1));   // azul
-    createBox(0, -5,  new BABYLON.Color3(1, 1, 0));   // amarelo
+    // caixas coloridas para referência
+    createBox(10 ,10,   new BABYLON.Color3(1, 0, 0));   // vermelho
+    createBox(10, 20,   new BABYLON.Color3(0, 1, 0));   // verde
+    createBox(10, 30,  new BABYLON.Color3(0, 0, 1));   // azul
+    createBox(10, 40,  new BABYLON.Color3(1, 1, 0));   // amarelo
+    createBox(-10 ,10,   new BABYLON.Color3(1, 0, 0));   // vermelho
+    createBox(-10, 20,   new BABYLON.Color3(0, 1, 0));   // verde
+    createBox(-10, 30,  new BABYLON.Color3(0, 0, 1));   // azul
+    createBox(-10, 40,  new BABYLON.Color3(1, 1, 0));   // amarelo
 
     return scene;
 };
