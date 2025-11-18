@@ -101,11 +101,12 @@ const createScene = () => {
     
     // Configurações da câmera
     camera.attachControl(canvas, true);
-    camera.lowerRadiusLimit = 5;  // Distância mínima
-    camera.upperRadiusLimit = 20; // Distância máxima
+    camera.lowerRadiusLimit = 8;  // Distância mínima
+    camera.upperRadiusLimit = 15; // Distância máxima
     camera.lowerBetaLimit = 0.1;  // Limite inferior vertical (evita ir abaixo do chão)
     camera.upperBetaLimit = Math.PI / 2.1; // Limite superior vertical
-    camera.wheelPrecision = 30; // Sensibilidade do scroll do mouse
+    camera.wheelPrecision = 30; // Sensibilidade do scroll do mouse - DESATIVADO
+    
     
     // Ativa movimento da câmera sem precisar clicar
     canvas.addEventListener("click", () => {
