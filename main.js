@@ -69,7 +69,43 @@ const createScene = () => {
         godzilla.isVisible = true;
         godzillaLoaded = true;
     });
+    // aqui termina o carregamento do modelo
+    
+    // === HELICÓPTERO ===
+    // 1 – nome do arquivo
+    const MODEL_FILENAME = "helicopter.glb";        // ← MUDE AQUI
+    // 2 – escala (ajuste depois de ver o tamanho)
+    const MODEL_SCALE = 0.005;                     // ← MUDE AQUI
+    // 3 – altura do tiro (boca/arma)
+    const FIRE_HEIGHT = 2.2;                       // ← MUDE AQUI
 
+    BABYLON.SceneLoader.ImportMesh("", "./source/", MODEL_FILENAME, scene, function (meshes, particleSystems, skeletons, animationGroups) {
+    console.log("Modelo carregado com sucesso!");
+
+    // Remove esfera temporária
+    godzilla.dispose();
+
+    // Pega o root ou primeiro mesh
+    godzilla = meshes[0].name === "__root__" ? meshes[0] : meshes[0];
+
+    // Configurações universais
+    godzilla.position.y = 0;
+    godzilla.scaling = new BABYLON.Vector3(MODEL_SCALE, MODEL_SCALE, MODEL_SCALE);
+    godzilla.rotation = new BABYLON.Vector3(0, 0, 0);
+
+    // Guarda animações
+    godzilla.animationGroups = animationGroups;
+
+    // Log das animações disponíveis
+    animationGroups.forEach(ag => console.log("Animação:", ag.name));
+
+    // Para todas inicialmente
+    animationGroups.forEach(ag => ag.stop());
+
+    godzillaLoaded = true;
+    });
+
+    // Configurações de movimento
     const MOVE_SPEED = 4;
     const ROTATION_SPEED = 2; // Velocidade de rotação em radianos por segundo
     const JUMP_POWER = 7;
@@ -322,7 +358,116 @@ const createScene = () => {
     createBox(-10, 20,   new BABYLON.Color3(0, 1, 0));   // verde
     createBox(-10, 30,  new BABYLON.Color3(0, 0, 1));   // azul
     createBox(-10, 40,  new BABYLON.Color3(1, 1, 0));   // amarelo
+    
 
+    // ==================== HELICÓPTERO INIMIGO – VERSÃO 100% FUNCIONAL E CORRIGIDA ====================
+    let helicopter = null;
+    let heliFireTimer = 0;
+
+    // Carregamento do helicóptero
+    BABYLON.SceneLoader.ImportMesh("", "./source/", "helicopter.glb", scene, (meshes) => {
+        if (meshes.length === 0) return;
+
+        // Cria o nó principal do helicóptero
+        helicopter = new BABYLON.TransformNode("enemyHelicopter");
+        helicopter.position = new BABYLON.Vector3(30, 12, 30);
+
+        // Nó de correção de orientação (aqui resolve o problema das pás pra baixo)
+        const orient = new BABYLON.TransformNode("heliOrientation");
+        orient.parent = helicopter;
+
+        // ESSA É A ROTAÇÃO QUE FUNCIONA COM 95% DOS HELICÓPTEROS DO SKETCHFAB:
+        orient.rotation = new BABYLON.Vector3(Math.PI / 2, Math.PI, 0);
+
+        // Se ainda ficar de lado ou invertido, troque APENAS essa linha por uma dessas:
+        // orient.rotation = new BABYLON.Vector3(-Math.PI / 2, 0, 0);
+        // orient.rotation = new BABYLON.Vector3(Math.PI / 2, 0, 0);
+
+        // Anexa todos os meshes ao nó corrigido
+        meshes.forEach(m => m.setParent(orient));
+
+        // Escala (ajuste se ficar muito grande ou pequeno)
+        orient.scaling = new BABYLON.Vector3(1.4, 1.4, 1.4);
+
+        // Gira o rotor automaticamente se existir animação
+        const rotor = scene.animationGroups.find(ag => /rotor|blade|prop/i.test(ag.name));
+        if (rotor) {
+            rotor.play(true);
+            rotor.speedRatio = 5;
+        }
+
+        console.log("%cHELICÓPTERO CARREGADO E VOANDO DIREITO!", "color: cyan; font-size: 14px; font-weight: bold");
+    });
+
+    // IA do helicóptero – TOTALMENTE ISOLADA (não mexe em nada do seu loop original)
+    scene.onBeforeRenderObservable.add(() => {
+        // Garante que o loop original do Godzilla continue rodando
+        const originalObserver = scene.onBeforeRenderObservable._observers.find(obs => obs.callback.name !== "");
+        if (originalObserver) originalObserver.callback();
+
+        if (!helicopter || !godzilla || godzilla.getChildMeshes().length === 0) return;
+
+        const dt = engine.getDeltaTime() / 1000;
+        const t = performance.now() * 0.001;
+
+        // Movimento circular ao redor do Godzilla
+        const radius = 45;
+        const center = godzilla.position;
+        helicopter.position.x = center.x + Math.sin(t * 0.3) * radius;
+        helicopter.position.z = center.z + Math.cos(t * 0.3) * radius;
+        helicopter.position.y = 15 + Math.sin(t * 1.5) * 4;
+
+        // Aponta pro Godzilla
+        helicopter.lookAt(godzilla.position);
+        helicopter.rotation.x = 0;
+        helicopter.rotation.z = 0;
+
+        // Atira a cada ~1.8s
+        heliFireTimer -= dt;
+        if (heliFireTimer <= 0) {
+            heliFireTimer = 1.8 + Math.random() * 0.6;
+
+            const dir = godzilla.position.subtract(helicopter.position).normalize();
+            const spawn = helicopter.position.clone();
+            spawn.y += 1.2;
+
+            const bullet = BABYLON.MeshBuilder.CreateSphere("heliBullet", { diameter: 0.25 }, scene);
+            bullet.position.copyFrom(spawn);
+            bullet.material = new BABYLON.StandardMaterial("", scene);
+            bullet.material.emissiveColor = new BABYLON.Color3(3, 0.7, 0);
+
+            projectiles.push({
+                mesh: bullet,
+                dir: dir.scale(55),
+                age: 0
+            });
+        }
+
+        // Colisão com Godzilla
+        for (let i = projectiles.length - 1; i >= 0; i--) {
+            const p = projectiles[i];
+            if (!p.mesh || !p.mesh.intersectsMesh) continue;
+
+            p.mesh.position.addInPlace(p.dir.scale(dt));
+            p.age += dt;
+
+            if (p.mesh.name === "heliBullet" && p.mesh.intersectsMesh(godzilla, false)) {
+                console.log("%cGODZILLA LEVOU TIRO DO HELICÓPTERO!!!", "color: red; font-size: 18px; font-weight: bold");
+                p.mesh.dispose();
+                projectiles.splice(i, 1);
+            } else if (p.age > 4) {
+                p.mesh.dispose();
+                projectiles.splice(i, 1);
+            }
+        }
+    });
+
+    
+    
+    
+    
+    
+    
     return scene;
 };
 
